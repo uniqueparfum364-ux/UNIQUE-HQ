@@ -4,7 +4,7 @@ import streamlit as st
 st.set_page_config(layout="wide", page_title="Unique Parfum HQ")
 
 # The Main Header
-st.title("📺 Unique Parfum: Smart TV Menu")
+st.title("📺 Unique Parfum: Pilot Room")
 st.markdown("---")
 
 # Create the Menu Tiles
