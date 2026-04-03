@@ -39,21 +39,20 @@ elif st.session_state.page == "crm":
     
     st.markdown("---")
 
-    # LOAD LIVE DATA
+    # LOAD LIVE DATA FROM THE '2026' WORKSHEET
     try:
-        # We target the specific sheet name if needed, otherwise it gets the first one
-        df = conn.read(ttl="0s")
-        # Ensure data is clean
-        df = df.dropna(how="all")
+        # We tell it exactly which tab to look at
+        df = conn.read(worksheet="2026", ttl="0s")
+        df = df.dropna(how="all") # Clean up any empty rows
         for c in COLUMNS:
             if c not in df.columns:
                 df[c] = ""
         df = df[COLUMNS]
     except Exception as e:
-        st.error(f"Syncing with Google... {e}")
+        st.error(f"Connecting to Google Sheets... {e}")
         df = pd.DataFrame(columns=COLUMNS)
 
-    # --- PART A: DASHBOARD ---
+    # --- PART A: PIPELINE DASHBOARD ---
     if not df.empty:
         temp_df = df.copy()
         temp_df['QUOTE'] = pd.to_numeric(temp_df['QUOTE'], errors='coerce').fillna(0)
@@ -64,7 +63,7 @@ elif st.session_state.page == "crm":
 
     st.markdown("---")
 
-    # --- PART B: THE INPUT FORM ---
+    # --- PART B: THE INPUT FORM (AUTO-SAVING) ---
     with st.expander("➕ Capture New Event Lead"):
         with st.form("new_lead_form", clear_on_submit=True):
             f_col1, f_col2 = st.columns(2)
@@ -80,7 +79,7 @@ elif st.session_state.page == "crm":
                 c_notes = st.text_area("NOTES")
             
             if st.form_submit_button("🚀 Secure & Sync to Google"):
-                new_row = pd.DataFrame([{
+                new_row = {
                     "Submitted": datetime.now().strftime("%Y-%m-%d %H:%M"),
                     "STATUS": c_status,
                     "QUOTE": str(c_quote),
@@ -90,11 +89,11 @@ elif st.session_state.page == "crm":
                     "EVENT DATE": str(c_date),
                     "LOCATION": c_loc,
                     "NOTES": c_notes
-                }])
+                }
                 
-                # SCRIPT: Add to existing data and push back
-                updated_df = pd.concat([df, new_row], ignore_index=True)
-                conn.update(data=updated_df)
+                # Push back specifically to the '2026' worksheet
+                updated_df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                conn.update(worksheet="2026", data=updated_df)
                 st.success("🔥 Event Secured in Google Sheets!")
                 st.rerun()
 
