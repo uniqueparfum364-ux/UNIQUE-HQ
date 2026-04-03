@@ -5,14 +5,12 @@ import pandas as pd
 st.set_page_config(layout="wide", page_title="Unique Parfum HQ")
 
 # --- 2. THE "BRAIN" (MEMORY SETUP) ---
-# This part checks if we already have a list of leads in our temporary memory.
-# If not, it loads the ones from your 'leads.csv' file.
 if 'lead_data' not in st.session_state:
     try:
-        # Load the starting list from your GitHub file
+        # Try to load the starting list from your GitHub file
         st.session_state.lead_data = pd.read_csv("leads.csv")
     except:
-        # If the file is missing, start with an empty table
+        # If the file is missing or empty, start with a clean table
         st.session_state.lead_data = pd.DataFrame(columns=["Name", "Email", "Source", "Status"])
 
 if 'page' not in st.session_state:
@@ -45,7 +43,7 @@ elif st.session_state.page == "crm":
     
     st.markdown("---")
 
-    # PART A: THE INPUT FORM (Now it actually works!)
+    # PART A: THE INPUT FORM
     with st.expander("➕ Add a New Lead"):
         with st.form("new_lead_form", clear_on_submit=True):
             new_name = st.text_input("Customer Name")
@@ -55,25 +53,43 @@ elif st.session_state.page == "crm":
             submit = st.form_submit_button("Save to List")
             
             if submit:
-                # 1. Create a "Row" for the new person
                 new_row = pd.DataFrame({
                     "Name": [new_name],
                     "Email": [new_email],
                     "Source": [new_source],
                     "Status": ["New"]
                 })
-                # 2. Add that row to our temporary memory
                 st.session_state.lead_data = pd.concat([st.session_state.lead_data, new_row], ignore_index=True)
-                st.success(f"✅ {new_name} added to the list below!")
+                st.success(f"✅ {new_name} added!")
 
     st.markdown("---")
 
-    # PART B: THE DATABASE VIEW
+    # PART B: THE DATABASE VIEW (Now Editable!)
     st.write("### Current Active Leads")
-    # We now show the data from our "Memory" (session_state)
-    st.dataframe(st.session_state.lead_data, use_container_width=True)
+    st.write("*(You can click a cell to edit it, or select a row and press Delete on your keyboard)*")
     
-    # PART C: THE AI BRAIN
+    # We use data_editor so you can interact with the table directly
+    edited_df = st.data_editor(
+        st.session_state.lead_data, 
+        use_container_width=True, 
+        num_rows="dynamic", # This allows you to add/delete rows manually
+        key="lead_editor"
+    )
+    
+    # Update our memory if you made changes in the table
+    st.session_state.lead_data = edited_df
+
+    st.markdown("---")
+    
+    # PART C: THE DANGER ZONE (Delete Everything)
+    with st.expander("⚠️ Management Tools (Delete/Reset)"):
+        if st.button("🗑️ Clear All Leads", type="primary"):
+            # This wipes the temporary memory and starts fresh
+            st.session_state.lead_data = pd.DataFrame(columns=["Name", "Email", "Source", "Status"])
+            st.warning("All leads removed from temporary memory!")
+            st.rerun() # Refresh the page to show the empty table
+
+    # PART D: THE AI BRAIN
     st.write("### 🧠 AI Analysis")
     if st.button("Run AI Sales Audit", key='ai_audit_btn'):
         st.balloons()
