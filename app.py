@@ -7,16 +7,16 @@ st.set_page_config(layout="wide", page_title="Unique Parfum HQ")
 # --- 2. THE "BRAIN" (MEMORY SETUP) ---
 if 'lead_data' not in st.session_state:
     try:
-        # Try to load the starting list from your GitHub file
+        # Load the starting list from your GitHub file
         st.session_state.lead_data = pd.read_csv("leads.csv")
     except:
-        # If the file is missing or empty, start with a clean table
+        # If the file is missing, start with a clean table
         st.session_state.lead_data = pd.DataFrame(columns=["Name", "Email", "Source", "Status"])
 
 if 'page' not in st.session_state:
     st.session_state.page = "home"
 
-# --- 3. PAGE: MAIN MENU ---
+# --- 3. PAGE: MAIN MENU (SMART TV) ---
 if st.session_state.page == "home":
     st.title("📺 Unique Parfum: Pilot Room")
     st.markdown("---")
@@ -35,7 +35,7 @@ if st.session_state.page == "home":
         st.subheader("🤖 AI Agents")
         st.button('Coming Soon', key='agent_btn', use_container_width=True, disabled=True)
 
-# --- 4. PAGE: CRM ---
+# --- 4. PAGE: CRM (CUSTOMER HUB) ---
 elif st.session_state.page == "crm":
     st.title("👥 Customer Relationship Management")
     if st.button("← Back to Menu", key='back_home'):
@@ -60,38 +60,30 @@ elif st.session_state.page == "crm":
                     "Status": ["New"]
                 })
                 st.session_state.lead_data = pd.concat([st.session_state.lead_data, new_row], ignore_index=True)
-                st.success(f"✅ {new_name} added!")
+                st.success(f"✅ {new_name} added to the Pilot Room memory!")
 
     st.markdown("---")
 
-    # PART B: THE DATABASE VIEW (Now Editable!)
+    # PART B: THE DATABASE VIEW (Editable & Surgical Delete)
     st.write("### Current Active Leads")
-    st.write("*(You can click a cell to edit it, or select a row and press Delete on your keyboard)*")
+    st.write("💡 *To remove a lead: Select the row and press **Delete** or **Backspace** on your keyboard.*")
     
-    # We use data_editor so you can interact with the table directly
+    # We kept the editor so you can still fix typos or delete single rows
     edited_df = st.data_editor(
         st.session_state.lead_data, 
         use_container_width=True, 
-        num_rows="dynamic", # This allows you to add/delete rows manually
+        num_rows="dynamic", 
         key="lead_editor"
     )
     
-    # Update our memory if you made changes in the table
+    # Save the changes back to memory
     st.session_state.lead_data = edited_df
 
     st.markdown("---")
     
-    # PART C: THE DANGER ZONE (Delete Everything)
-    with st.expander("⚠️ Management Tools (Delete/Reset)"):
-        if st.button("🗑️ Clear All Leads", type="primary"):
-            # This wipes the temporary memory and starts fresh
-            st.session_state.lead_data = pd.DataFrame(columns=["Name", "Email", "Source", "Status"])
-            st.warning("All leads removed from temporary memory!")
-            st.rerun() # Refresh the page to show the empty table
-
-    # PART D: THE AI BRAIN
+    # PART C: THE AI BRAIN
     st.write("### 🧠 AI Analysis")
     if st.button("Run AI Sales Audit", key='ai_audit_btn'):
         st.balloons()
         wedding_count = len(st.session_state.lead_data[st.session_state.lead_data['Source'] == 'Wedding Giveaway'])
-        st.success(f"AI Found **{wedding_count}** potential wedding bookings!")
+        st.success(f"AI Found **{wedding_count}** high-value potential wedding bookings!")
