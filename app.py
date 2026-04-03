@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
 
-# 1. SETUP THE SCREEN
+# 1. SETUP
 st.set_page_config(layout="wide", page_title="Unique Parfum HQ")
 
-# This "State" tells the app which page to show
 if 'page' not in st.session_state:
     st.session_state.page = "home"
 
@@ -17,15 +16,15 @@ if st.session_state.page == "home":
     with col1:
         st.subheader("👥 CRM")
         if st.button('Open CRM', use_container_width=True):
-            st.session_state.page = "crm" # Change the page!
+            st.session_state.page = "crm"
 
     with col2:
         st.subheader("🧾 Auto-Invoices")
-        st.button('Open Invoices (Locked)', use_container_width=True, disabled=True)
+        st.button('Coming Soon', use_container_width=True, disabled=True)
 
     with col3:
         st.subheader("🤖 AI Agents")
-        st.button('Talk to Agents (Locked)', use_container_width=True, disabled=True)
+        st.button('Coming Soon', use_container_width=True, disabled=True)
 
 # --- PAGE 2: THE CRM ---
 elif st.session_state.page == "crm":
@@ -34,11 +33,32 @@ elif st.session_state.page == "crm":
         st.session_state.page = "home"
     
     st.markdown("---")
-    
-    # Load your "Customer List" from the file we just made
+
+    # A. THE INPUT (Adding a Lead)
+    with st.expander("➕ Add a New Lead (Market or Event)"):
+        with st.form("lead_form"):
+            name = st.text_input("Name")
+            email = st.text_input("Email")
+            source = st.selectbox("Source", ["ADX Sydney", "Gold Coast", "Wedding Giveaway", "Market"])
+            if st.form_submit_button("Save to CRM"):
+                st.success(f"Captured {name}! (In Step 3, we will make this permanent)")
+
+    st.markdown("---")
+
+    # B. THE MEMORY (The Table)
     try:
         df = pd.read_csv("leads.csv")
-        st.write("### Current Leads")
-        st.dataframe(df, use_container_width=True) # This shows the table
+        st.write("### Current Lead List")
+        st.dataframe(df, use_container_width=True)
+        
+        # C. THE AI BRAIN (Practice Logic)
+        st.write("### 🧠 AI Lead Analyzer")
+        if st.button("Run AI Sales Analysis"):
+            st.info("AI is analyzing lead sources...")
+            # We are teaching the "Brain" to look for "Wedding" sources
+            wedding_leads = df[df['Source'] == 'Wedding Giveaway']
+            st.write(f"✅ AI Found **{len(wedding_leads)}** high-potential wedding leads.")
+            st.write("💡 **Recommendation:** Send a 'Versailles' sample to these leads first.")
+            
     except:
-        st.error("I couldn't find your leads.csv file!")
+        st.error("Missing leads.csv file!")
