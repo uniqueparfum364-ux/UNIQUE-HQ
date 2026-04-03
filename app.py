@@ -5,20 +5,31 @@ from datetime import datetime
 # --- 1. ARCHITECTURAL SETUP ---
 st.set_page_config(layout="wide", page_title="Unique Parfum HQ", page_icon="👃")
 
-# Define the "Golden Columns" for your sales team
-COLUMNS = ["Submitted", "Contact", "Email", "Phone", "Event Date", "Location", "Notes", "Quote", "Status"]
+# These are the exact columns you requested
+COLUMNS = ["Submitted", "Email", "Phone", "Contact", "Event Date", "Location", "Notes", "Quote", "Status"]
 
+# --- 2. DATA LOADING & SELF-HEALING ---
 if 'lead_data' not in st.session_state:
     try:
-        st.session_state.lead_data = pd.read_csv("leads.csv")
+        # Load the existing file
+        existing_df = pd.read_csv("leads.csv")
+        
+        # SELF-HEALING: If the old file is missing your new columns, we add them now
+        for col in COLUMNS:
+            if col not in existing_df.columns:
+                existing_df[col] = "" # Add the missing column as empty
+        
+        # Keep only the columns we want, in the right order
+        st.session_state.lead_data = existing_df[COLUMNS]
+        
     except:
-        # Start with a clean, structured table if file is missing
+        # If no file exists, start a fresh professional table
         st.session_state.lead_data = pd.DataFrame(columns=COLUMNS)
 
 if 'page' not in st.session_state:
     st.session_state.page = "home"
 
-# --- 2. PAGE: MAIN MENU ---
+# --- 3. PAGE: MAIN MENU ---
 if st.session_state.page == "home":
     st.title("📺 Unique Parfum: Pilot Room")
     st.markdown("---")
@@ -40,7 +51,7 @@ if st.session_state.page == "home":
         st.write("Draft follow-up emails automatically.")
         st.button('System Locked', key='agent_btn', use_container_width=True, disabled=True)
 
-# --- 3. PAGE: ELEVATED CRM ---
+# --- 4. PAGE: ELEVATED CRM ---
 elif st.session_state.page == "crm":
     st.title("👥 Sales & Lead Hub")
     if st.button("← Back to Menu"):
@@ -48,39 +59,42 @@ elif st.session_state.page == "crm":
     
     st.markdown("---")
 
-    # --- PART A: EXECUTIVE METRICS (The 'Money' View) ---
-    # Sales guys love seeing the total value of their work
-    total_leads = len(st.session_state.lead_data)
-    # Convert 'Quote' to numeric safely for calculation
-    pipeline_val = pd.to_numeric(st.session_state.lead_data['Quote'], errors='coerce').sum()
+    # --- PART A: EXECUTIVE METRICS ---
+    # We use .fillna(0) to prevent errors if quotes are empty
+    temp_df = st.session_state.lead_data.copy()
+    temp_df['Quote'] = pd.to_numeric(temp_df['Quote'], errors='coerce').fillna(0)
+    
+    total_leads = len(temp_df)
+    pipeline_val = temp_df['Quote'].sum()
+    hot_leads = len(temp_df[temp_df['Status'] == 'Hot'])
     
     m1, m2, m3 = st.columns(3)
     m1.metric("Total Active Leads", total_leads)
-    m2.metric("Total Pipeline Value", f"${pipeline_val:,.2f}")
-    m3.metric("High Priority", len(st.session_state.lead_data[st.session_state.lead_data['Status'] == 'Hot']))
+    m2.metric("Pipeline Value", f"${pipeline_val:,.2f}")
+    m3.metric("Hot Deals", hot_leads)
 
     st.markdown("---")
 
-    # --- PART B: SMART INPUT FORM (Optimized for Mobile/Market use) ---
+    # --- PART B: SMART INPUT FORM ---
     with st.expander("➕ Capture New Event Lead"):
         with st.form("new_lead_form", clear_on_submit=True):
             f_col1, f_col2 = st.columns(2)
             with f_col1:
-                c_name = st.text_input("Contact Person")
+                c_contact = st.text_input("Contact Person")
                 c_email = st.text_input("Email Address")
                 c_phone = st.text_input("Phone Number")
-                c_loc = st.selectbox("Event Location", ["Sydney CBD", "Sydney Greater", "Gold Coast", "Other"])
+                c_loc = st.text_input("Location (Venue/City)")
             
             with f_col2:
                 c_date = st.date_input("Event Date", datetime.now())
-                c_quote = st.number_input("Estimated Quote ($)", min_value=0.0, step=50.0)
-                c_status = st.select_slider("Lead Status", options=["New", "Contacted", "Quoted", "Hot", "Paid"])
-                c_notes = st.text_area("Notes (Scent prefs, etc.)")
+                c_quote = st.number_input("Quote Amount ($)", min_value=0.0, step=100.0)
+                c_status = st.selectbox("Status", ["New", "Contacted", "Quoted", "Hot", "Paid"])
+                c_notes = st.text_area("Specific Notes")
             
             if st.form_submit_button("Secure Lead"):
                 new_row = pd.DataFrame({
                     "Submitted": [datetime.now().strftime("%Y-%m-%d %H:%M")],
-                    "Contact": [c_name],
+                    "Contact": [c_contact],
                     "Email": [c_email],
                     "Phone": [c_phone],
                     "Event Date": [str(c_date)],
@@ -90,12 +104,11 @@ elif st.session_state.page == "crm":
                     "Status": [c_status]
                 })
                 st.session_state.lead_data = pd.concat([st.session_state.lead_data, new_row], ignore_index=True)
-                st.success(f"Lead for {c_name} saved to pipeline!")
+                st.rerun()
 
-    # --- PART C: THE MASTER TABLE (Clean & Functional) ---
+    # --- PART C: THE MASTER TABLE ---
     st.write("### 🗄️ Active Sales Pipeline")
     
-    # We use column_config to make it look expensive and professional
     edited_df = st.data_editor(
         st.session_state.lead_data,
         use_container_width=True,
@@ -103,8 +116,8 @@ elif st.session_state.page == "crm":
         column_config={
             "Quote": st.column_config.NumberColumn("Quote ($)", format="$%d"),
             "Status": st.column_config.SelectboxColumn("Status", options=["New", "Contacted", "Quoted", "Hot", "Paid"]),
-            "Email": st.column_config.TextColumn("Email"),
-            "Submitted": st.column_config.TextColumn("Submitted", disabled=True) # Lock the timestamp
-        }
+            "Submitted": st.column_config.TextColumn("Submitted", disabled=True)
+        },
+        key="lead_editor_v2"
     )
     st.session_state.lead_data = edited_df
