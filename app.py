@@ -6,51 +6,55 @@ from streamlit_gsheets import GSheetsConnection
 # --- 1. ARCHITECTURAL SETUP ---
 st.set_page_config(layout="wide", page_title="Unique Parfum HQ", page_icon="👃")
 
-# Create the Secure Connection
+# Create the Secure Connection to your Google Sheet
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# The 4 Essential Statuses
+# Your 4 Pillar Statuses & Column Order
 STATUS_OPTIONS = ["NEW", "PENDING", "SOLD", "LOST"]
 COLUMNS = ["Submitted", "STATUS", "QUOTE", "CONTACT", "EMAIL", "PHONE", "EVENT DATE", "LOCATION", "NOTES"]
 
 if 'page' not in st.session_state:
     st.session_state.page = "home"
 
-# --- 2. PAGE: MAIN MENU ---
+# --- 2. PAGE: MAIN MENU (SMART TV STYLE) ---
 if st.session_state.page == "home":
     st.title("📺 Unique Parfum: Pilot Room")
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
+
     with col1:
         st.info("### 👥 Sales CRM")
-        if st.button('Enter Sales Hub', key='main_crm_btn', use_container_width=True):
+        if st.button('Enter Sales Hub', key='btn_nav_crm', use_container_width=True):
             st.session_state.page = "crm"
+
     with col2:
         st.info("### 🧾 Auto-Invoices")
-        st.button('Coming Soon', use_container_width=True, disabled=True)
+        # Added unique key 'btn_menu_inv' to prevent error
+        st.button('Coming Soon', key='btn_menu_inv', use_container_width=True, disabled=True)
+
     with col3:
         st.info("### 🤖 AI Agents")
-        st.button('Coming Soon', use_container_width=True, disabled=True)
+        # Added unique key 'btn_menu_agent' to prevent error
+        st.button('Coming Soon', key='btn_menu_agent', use_container_width=True, disabled=True)
 
-# --- 3. PAGE: CRM (THE SALES HUB) ---
+# --- 3. PAGE: ELEVATED CRM ---
 elif st.session_state.page == "crm":
     st.title("👥 Sales & Lead Hub")
-    if st.button("← Back to Menu"):
+    if st.button("← Back to Menu", key='btn_crm_back'):
         st.session_state.page = "home"
     
     st.markdown("---")
 
-    # LOAD LIVE DATA
+    # LOAD LIVE DATA FROM '2026' TAB
     try:
         df = conn.read(worksheet="2026", ttl="0s")
         df = df.dropna(how="all")
-        # Ensure all columns exist and are in order
         for c in COLUMNS:
             if c not in df.columns:
                 df[c] = ""
         df = df[COLUMNS]
     except Exception as e:
-        st.error("Connecting to Google Sheets...")
+        st.error(f"Syncing with Google... {e}")
         df = pd.DataFrame(columns=COLUMNS)
 
     # --- PART A: PIPELINE DASHBOARD ---
@@ -61,14 +65,13 @@ elif st.session_state.page == "crm":
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Total Leads", len(temp_df))
         m2.metric("Pipeline Value", f"${temp_df['QUOTE'].sum():,.2f}")
-        # Show how many we've actually CLOSED
         sold_val = temp_df[temp_df['STATUS'] == 'SOLD']['QUOTE'].sum()
         m3.metric("Total SOLD", f"${sold_val:,.2f}")
         m4.metric("Pending Deals", len(temp_df[temp_df['STATUS'] == 'PENDING']))
 
     st.markdown("---")
 
-    # --- PART B: THE INPUT FORM ---
+    # --- PART B: THE INPUT FORM (NEW/PENDING/SOLD/LOST) ---
     with st.expander("➕ Capture New Event Lead"):
         with st.form("new_lead_form", clear_on_submit=True):
             f_col1, f_col2 = st.columns(2)
@@ -97,14 +100,12 @@ elif st.session_state.page == "crm":
                 }])
                 updated_df = pd.concat([df, new_row], ignore_index=True)
                 conn.update(worksheet="2026", data=updated_df)
-                st.success("🔥 Data Secured!")
+                st.success("🔥 Data Secured in Google Sheets!")
                 st.rerun()
 
-    # --- PART C: THE INTERACTIVE SALES BOARD ---
+    # --- PART C: THE MASTER TABLE (EDITABLE) ---
     st.write("### 🗄️ Active Sales Pipeline")
-    st.info("💡 You can update **STATUS** or **QUOTE** directly in the table below, then hit 'Sync Changes'.")
     
-    # We use data_editor to make the STATUS a dropdown inside the table
     edited_df = st.data_editor(
         df,
         use_container_width=True,
@@ -114,12 +115,12 @@ elif st.session_state.page == "crm":
             "QUOTE": st.column_config.NumberColumn("QUOTE ($)", format="$%d"),
             "Submitted": st.column_config.TextColumn("Submitted", disabled=True)
         },
-        key="main_editor"
+        key="crm_editor_v3"
     )
     
-    # Only show the "Sync" button if the data has actually changed
+    # Save button appears only if you change something in the table
     if not edited_df.equals(df):
-        if st.button("💾 Sync Changes to Google Sheets", type="primary"):
+        if st.button("💾 Sync Changes to Google Sheets", type="primary", key='btn_crm_sync'):
             conn.update(worksheet="2026", data=edited_df)
             st.success("Pipeline Updated!")
             st.rerun()
