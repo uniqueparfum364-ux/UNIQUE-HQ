@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import pandas.api.types as ptypes
 from streamlit_gsheets import GSheetsConnection
 
 # --- 1. ARCHITECTURAL SETUP ---
@@ -25,7 +26,7 @@ if st.session_state.page == "home":
         st.info("### 👥 Sales CRM")
         if st.button('Enter Sales Hub', key='btn_nav_crm', use_container_width=True):
             st.session_state.page = "crm"
-            st.rerun() # FIX: Instant navigation
+            st.rerun()
     with col2:
         st.info("### 🧾 Auto-Invoices")
         st.button('Coming Soon', key='btn_menu_inv', use_container_width=True, disabled=True)
@@ -38,22 +39,27 @@ elif st.session_state.page == "crm":
     st.title("👥 Sales & Lead Hub")
     if st.button("← Back to Menu", key='btn_crm_back'):
         st.session_state.page = "home"
-        st.rerun() # FIX: Added rerun for instant page switching
+        st.rerun()
     
     st.markdown("---")
 
-    # LOAD LIVE DATA (FIX: Optimized TTL to 1 minute to prevent rate limits)
+    # LOAD LIVE DATA
     try:
-        # ttl="1m" keeps it snappy but reduces API calls
-        df = conn.read(worksheet="2026", ttl="1m") 
+        df = conn.read(worksheet="2026", ttl="1m")
         df = df.dropna(how="all")
         
-        # FIX: Warning for missing columns (Schema Drift Check)
-        missing_cols = [c for c in COLUMNS if c not in df.columns]
-        if missing_cols:
-            st.warning(f"⚠️ Sheet schema drift! Missing columns: {', '.join(missing_cols)}")
-            for c in missing_cols:
+        # Ensure all columns exist
+        for c in COLUMNS:
+            if c not in df.columns:
                 df[c] = ""
+        
+        # --- FIX: DATA SANITIZER (Prevents st.data_editor crash) ---
+        # 1. Force Quote to be numeric
+        df['QUOTE'] = pd.to_numeric(df['QUOTE'], errors='coerce').fillna(0.0)
+        # 2. Force Event Date to be a date object
+        df['EVENT DATE'] = pd.to_datetime(df['EVENT DATE'], errors='coerce').dt.date
+        # 3. Ensure Status is clean
+        df['STATUS'] = df['STATUS'].fillna("NEW").astype(str)
         
         df = df[COLUMNS]
     except Exception as e:
@@ -63,7 +69,7 @@ elif st.session_state.page == "crm":
     # --- PART A: PIPELINE DASHBOARD ---
     if not df.empty:
         temp_df = df.copy()
-        temp_df['QUOTE'] = pd.to_numeric(temp_df['QUOTE'], errors='coerce').fillna(0)
+        # Pipeline excludes LOST deals
         active_pipeline = temp_df[temp_df['STATUS'] != 'LOST']
         pipeline_val = active_pipeline['QUOTE'].sum()
         
@@ -78,7 +84,6 @@ elif st.session_state.page == "crm":
     # --- PART B: THE UNIFIED WORKSPACE ---
     st.write("### 🗄️ Active Sales Pipeline")
     
-    # FIX: Store original for comparison BEFORE adding the HEAT column
     df_original = df.copy()
 
     # Visual "Heat" column logic
@@ -90,6 +95,7 @@ elif st.session_state.page == "crm":
 
     df.insert(0, "HEAT", df["STATUS"].apply(get_heat))
 
+    # FIX: Using the sanitized types here prevents the StreamlitAPIException
     edited_df = st.data_editor(
         df,
         use_container_width=True,
@@ -97,27 +103,26 @@ elif st.session_state.page == "crm":
         column_config={
             "HEAT": st.column_config.TextColumn("HEAT", disabled=True, width="small"),
             "STATUS": st.column_config.SelectboxColumn("STATUS", options=STATUS_OPTIONS, required=True),
-            "QUOTE": st.column_config.NumberColumn("QUOTE ($)", format="$%d"),
+            "QUOTE": st.column_config.NumberColumn("QUOTE ($)", format="$%.2f"),
             "Submitted": st.column_config.TextColumn("Submitted", disabled=True),
             "EVENT DATE": st.column_config.DateColumn("EVENT DATE")
         },
-        key="unified_crm_editor_v5"
+        key="unified_crm_editor_v6"
     )
 
-    # --- PART C: THE REFINED SYNC LOGIC ---
-    # FIX: Clean comparison by dropping HEAT from the edited version
+    # --- PART C: THE SYNC LOGIC ---
     edited_clean = edited_df.drop(columns=["HEAT"])
 
     if not edited_clean.equals(df_original):
         if st.button("💾 Sync Changes to Google Sheets", type="primary", key='btn_crm_sync', use_container_width=True):
             
-            # FIX: Auto-fill empty STATUS for new rows
+            # Clean up new rows before saving
             edited_clean['STATUS'] = edited_clean['STATUS'].replace("", "NEW").fillna("NEW")
-            
-            # Ensure new rows get timestamps
             edited_clean.loc[edited_clean['Submitted'] == "", 'Submitted'] = datetime.now().strftime("%Y-%m-%d %H:%M")
             
-            # Update the Sheet
+            # Convert dates back to strings for Google Sheets storage
+            edited_clean['EVENT DATE'] = edited_clean['EVENT DATE'].astype(str)
+            
             conn.update(worksheet="2026", data=edited_clean)
-            st.success("🔥 Changes synced! Refreshing data...")
+            st.success("🔥 Changes synced! Refreshing...")
             st.rerun()
