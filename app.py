@@ -9,28 +9,20 @@ st.set_page_config(layout="wide", page_title="Unique Parfum HQ", page_icon="👃
 # Create the Secure Connection
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# The 4 Essential Statuses
-STATUS_OPTIONS = ["NEW", "PENDING", "SOLD", "LOST"]
+# The 4 Essential Statuses with Visual Markers
+STATUS_MAP = {
+    "NEW": "⚪ NEW",
+    "PENDING": "🟡 PENDING",
+    "SOLD": "🟢 SOLD",
+    "LOST": "🔴 LOST"
+}
+STATUS_OPTIONS = list(STATUS_MAP.keys())
 COLUMNS = ["Submitted", "STATUS", "QUOTE", "CONTACT", "EMAIL", "PHONE", "EVENT DATE", "LOCATION", "NOTES"]
 
 if 'page' not in st.session_state:
     st.session_state.page = "home"
 
-# --- 2. THE STYLING ENGINE (Architect's Secret) ---
-def style_pipe(row):
-    """Applies soft background colors based on status for high readability."""
-    status = row['STATUS']
-    if status == 'SOLD':
-        return ['background-color: #d4edda; color: #155724'] * len(row) # Soft Green
-    elif status == 'PENDING':
-        return ['background-color: #fff3cd; color: #856404'] * len(row) # Soft Yellow
-    elif status == 'LOST':
-        return ['background-color: #f8d7da; color: #721c24'] * len(row) # Soft Red
-    elif status == 'NEW':
-        return ['background-color: #e2e3e5; color: #383d41'] * len(row) # Soft Grey
-    return [''] * len(row)
-
-# --- 3. PAGE: MAIN MENU ---
+# --- 2. PAGE: MAIN MENU ---
 if st.session_state.page == "home":
     st.title("📺 Unique Parfum: Pilot Room")
     st.markdown("---")
@@ -46,7 +38,7 @@ if st.session_state.page == "home":
         st.info("### 🤖 AI Agents")
         st.button('Coming Soon', key='btn_menu_agent', use_container_width=True, disabled=True)
 
-# --- 4. PAGE: CRM (THE COLOR HUB) ---
+# --- 3. PAGE: UNIFIED CRM ---
 elif st.session_state.page == "crm":
     st.title("👥 Sales & Lead Hub")
     if st.button("← Back to Menu", key='btn_crm_back'):
@@ -63,90 +55,65 @@ elif st.session_state.page == "crm":
                 df[c] = ""
         df = df[COLUMNS]
     except Exception as e:
-        st.error(f"Syncing with Google... {e}")
+        st.error(f"Connecting to Google Sheets... {e}")
         df = pd.DataFrame(columns=COLUMNS)
 
-    # --- PART A: PIPELINE DASHBOARD (LOST Leads Excluded) ---
+    # --- PART A: PIPELINE DASHBOARD (LOST = $0) ---
     if not df.empty:
         temp_df = df.copy()
         temp_df['QUOTE'] = pd.to_numeric(temp_df['QUOTE'], errors='coerce').fillna(0)
         
-        # ARCHITECT'S RULE: Pipeline value only counts ACTIVE deals (Not LOST)
+        # Pipeline logic: Only count NEW, PENDING, and SOLD
         active_pipeline = temp_df[temp_df['STATUS'] != 'LOST']
         pipeline_val = active_pipeline['QUOTE'].sum()
         
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Leads", len(temp_df))
-        m2.metric("Pipeline Value", f"${pipeline_val:,.2f}", help="Excludes LOST leads")
+        m1.metric("Active Leads", len(active_pipeline))
+        m2.metric("Pipeline Value", f"${pipeline_val:,.2f}", help="LOST deals are excluded from this total")
         
         sold_val = temp_df[temp_df['STATUS'] == 'SOLD']['QUOTE'].sum()
         m3.metric("Total SOLD", f"${sold_val:,.2f}")
         
         lost_count = len(temp_df[temp_df['STATUS'] == 'LOST'])
-        m4.metric("Lost Opportunities", lost_count)
+        m4.metric("LOST Deals", lost_count)
 
     st.markdown("---")
 
-    # --- PART B: THE INPUT FORM ---
-    with st.expander("➕ Capture New Event Lead"):
-        with st.form("new_lead_form", clear_on_submit=True):
-            f_col1, f_col2 = st.columns(2)
-            with f_col1:
-                c_status = st.selectbox("STATUS", STATUS_OPTIONS)
-                c_quote = st.number_input("QUOTE ($)", min_value=0.0, step=100.0)
-                c_contact = st.text_input("CONTACT NAME")
-                c_email = st.text_input("EMAIL")
-            with f_col2:
-                c_phone = st.text_input("PHONE")
-                c_date = st.date_input("EVENT DATE", datetime.now())
-                c_loc = st.text_input("LOCATION")
-                c_notes = st.text_area("NOTES")
-            
-            if st.form_submit_button("🚀 Secure & Sync"):
-                new_row = pd.DataFrame([{
-                    "Submitted": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "STATUS": c_status,
-                    "QUOTE": str(c_quote),
-                    "CONTACT": c_contact,
-                    "EMAIL": c_email,
-                    "PHONE": c_phone,
-                    "EVENT DATE": str(c_date),
-                    "LOCATION": c_loc,
-                    "NOTES": c_notes
-                }])
-                updated_df = pd.concat([df, new_row], ignore_index=True)
-                conn.update(worksheet="2026", data=updated_df)
-                st.success("🔥 Data Secured!")
-                st.rerun()
-
-    # --- PART C: THE COLOR-CODED SALES BOARD ---
+    # --- PART B: THE UNIFIED WORKSPACE ---
     st.write("### 🗄️ Active Sales Pipeline")
-    
-    # We apply the styling to the view
-    styled_df = df.style.apply(style_pipe, axis=1)
-    
-    # Show the styled table (Note: Styled tables are for VIEWING)
-    st.dataframe(styled_df, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # PART D: THE EDITING AREA
-    with st.expander("📝 Edit Pipeline / Update Status"):
-        st.info("Update status or details here and click Sync.")
-        edited_df = st.data_editor(
-            df,
-            use_container_width=True,
-            num_rows="dynamic",
-            column_config={
-                "STATUS": st.column_config.SelectboxColumn("STATUS", options=STATUS_OPTIONS, required=True),
-                "QUOTE": st.column_config.NumberColumn("QUOTE ($)", format="$%d"),
-                "Submitted": st.column_config.TextColumn("Submitted", disabled=True)
-            },
-            key="crm_editor_v4"
-        )
-        
-        if not edited_df.equals(df):
-            if st.button("💾 Sync Changes to Google Sheets", type="primary", key='btn_crm_sync'):
-                conn.update(worksheet="2026", data=edited_df)
-                st.success("Pipeline Updated!")
-                st.rerun()
+    st.write("💡 *Click any cell to edit. Add new rows at the bottom. Hit 'Sync' to save to Google.*")
+
+    # Add a visual "Heat" column based on Status for the display
+    def get_heat(status):
+        if status == "SOLD": return "🟢"
+        if status == "PENDING": return "🟡"
+        if status == "LOST": return "🔴"
+        return "⚪"
+
+    df.insert(0, "HEAT", df["STATUS"].apply(get_heat))
+
+    # THE ONE AND ONLY DATA EDITOR
+    edited_df = st.data_editor(
+        df,
+        use_container_width=True,
+        num_rows="dynamic",
+        column_config={
+            "HEAT": st.column_config.TextColumn("HEAT", disabled=True, width="small"),
+            "STATUS": st.column_config.SelectboxColumn("STATUS", options=STATUS_OPTIONS, required=True),
+            "QUOTE": st.column_config.NumberColumn("QUOTE ($)", format="$%d"),
+            "Submitted": st.column_config.TextColumn("Submitted", disabled=True),
+            "EVENT DATE": st.column_config.DateColumn("EVENT DATE")
+        },
+        key="unified_crm_editor"
+    )
+
+    # --- PART C: THE SYNC BUTTON ---
+    # We remove the HEAT column before saving back to Google
+    if not edited_df.equals(df):
+        if st.button("💾 Sync Changes to Google Sheets", type="primary", key='btn_crm_sync', use_container_width=True):
+            save_df = edited_df.drop(columns=["HEAT"])
+            # Ensure New Rows get a timestamp
+            save_df.loc[save_df['Submitted'] == "", 'Submitted'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            conn.update(worksheet="2026", data=save_df)
+            st.success("🔥 All changes synced successfully!")
+            st.rerun()
