@@ -6,113 +6,133 @@ from streamlit_gsheets import GSheetsConnection
 # --- 1. ARCHITECTURAL SETUP ---
 st.set_page_config(layout="wide", page_title="Unique Parfum HQ", page_icon="👃")
 
-# CSS Injection for DM Sans and Luxury Styling
+# Injecting DM Sans & Luxury UI Styles
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');
     html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     .stMetric { background-color: #ffffff; border: 0.5px solid #e2e8f0; padding: 15px; border-radius: 12px; }
-    .status-chip { padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
     </style>
 """, unsafe_allow_html=True)
 
-# Connection & Configuration
+# Connection Setup
 conn = st.connection("gsheets", type=GSheetsConnection)
-STATUS_STYLES = {
-    "NEW":     {"bg": "#F1EFE8", "color": "#5F5E5A", "dot": "⚪"},
-    "PENDING": {"bg": "#FAEEDA", "color": "#854F0B", "dot": "🟡"},
-    "SOLD":    {"bg": "#EAF3DE", "color": "#3B6D11", "dot": "🟢"},
-    "LOST":    {"bg": "#FCEBEB", "color": "#A32D2D", "dot": "🔴"},
-}
+
+# The 4 Essential Statuses
+STATUS_OPTIONS = ["NEW", "PENDING", "SOLD", "LOST"]
 COLUMNS = ["Submitted", "STATUS", "QUOTE", "CONTACT", "EMAIL", "PHONE", "EVENT DATE", "LOCATION", "NOTES"]
 
-# Initialize States
-if 'view' not in st.session_state: st.session_state.view = "list"
-if 'selected_lead_idx' not in st.session_state: st.session_state.selected_lead_idx = None
+if 'view' not in st.session_state:
+    st.session_state.page = "home"
 
-# --- 2. DATA LOADING ---
-try:
-    df = conn.read(worksheet="2026", ttl="1m")
-    df = df.dropna(how="all")
-    for c in COLUMNS:
-        if c not in df.columns: df[c] = ""
-    # Data Sanitization
-    df['QUOTE'] = pd.to_numeric(df['QUOTE'], errors='coerce').fillna(0.0)
-except:
-    df = pd.DataFrame(columns=COLUMNS)
+# --- 2. PAGE: MAIN MENU ---
+if st.session_state.page == "home":
+    st.title("📺 Unique Parfum: Pilot Room")
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.info("### 👥 Sales CRM")
+        if st.button('Enter Sales Hub', key='btn_nav_crm', use_container_width=True):
+            st.session_state.page = "crm"
+            st.rerun() # FIX: Instant navigation
+    with col2:
+        st.info("### 🧾 Auto-Invoices")
+        st.button('Coming Soon', key='btn_menu_inv', use_container_width=True, disabled=True)
+    with col3:
+        st.info("### 🤖 AI Agents")
+        st.button('Coming Soon', key='btn_menu_agent', use_container_width=True, disabled=True)
 
-# --- 3. TOP NAV & METRICS ---
-st.title("👃 Unique Parfum")
-active_df = df[df['STATUS'] != 'LOST']
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Active Leads", len(active_df))
-m2.metric("Pipeline Value", f"${active_df['QUOTE'].sum():,.0f}")
-m3.metric("Closed Won", f"${df[df['STATUS'] == 'SOLD']['QUOTE'].sum():,.0f}")
-m4.metric("Lost Deals", len(df[df['STATUS'] == 'LOST']))
-
-st.markdown("---")
-
-# --- 4. THE UNIFIED WORKSPACE ---
-
-# VIEW: LIST (The Main Board)
-if st.session_state.view == "list":
-    col_a, col_b = st.columns([5, 1])
-    col_a.subheader("Active Sales Pipeline")
-    if col_b.button("+ New Lead", type="primary", use_container_width=True):
-        st.session_state.view = "form"
-        st.rerun()
-
-    # FIX: Comparison logic
-    df_original = df.copy()
+# --- 3. PAGE: UNIFIED CRM ---
+elif st.session_state.page == "crm":
+    st.title("👥 Sales & Lead Hub")
+    if st.button("← Back to Menu", key='btn_crm_back'):
+        st.session_state.page = "home"
+        st.rerun() # FIX: Added rerun for instant switching
     
+    st.markdown("---")
+
+    # LOAD LIVE DATA
+    try:
+        # Optimized TTL to 1m for performance
+        df = conn.read(worksheet="2026", ttl="1m")
+        df = df.dropna(how="all")
+        
+        # Ensure all columns exist
+        for c in COLUMNS:
+            if c not in df.columns:
+                df[c] = ""
+        
+        # --- FIX: THE DATA SANITIZER (The "Anti-Crash" Logic) ---
+        # Forces columns into the correct types for st.data_editor
+        df['QUOTE'] = pd.to_numeric(df['QUOTE'], errors='coerce').fillna(0.0)
+        df['EVENT DATE'] = pd.to_datetime(df['EVENT DATE'], errors='coerce').dt.date
+        df['STATUS'] = df['STATUS'].fillna("NEW").astype(str)
+        
+        df = df[COLUMNS]
+    except Exception as e:
+        st.error(f"Connecting to Google Sheets... {e}")
+        df = pd.DataFrame(columns=COLUMNS)
+
+    # --- PART A: PIPELINE DASHBOARD (LOST = $0) ---
+    if not df.empty:
+        temp_df = df.copy()
+        # Pipeline excludes LOST deals
+        active_pipeline = temp_df[temp_df['STATUS'] != 'LOST']
+        pipeline_val = active_pipeline['QUOTE'].sum()
+        
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Active Leads", len(active_pipeline))
+        m2.metric("Pipeline Value", f"${pipeline_val:,.2f}")
+        m3.metric("Total SOLD", f"${temp_df[temp_df['STATUS'] == 'SOLD']['QUOTE'].sum():,.2f}")
+        m4.metric("LOST Deals", len(temp_df[temp_df['STATUS'] == 'LOST']))
+
+    st.markdown("---")
+
+    # --- PART B: THE UNIFIED WORKSPACE ---
+    st.write("### 🗄️ Active Sales Pipeline")
+    
+    # Store original for sync comparison
+    df_original = df.copy()
+
+    # Visual "Heat" column logic
+    def get_heat(status):
+        if status == "SOLD": return "🟢"
+        if status == "PENDING": return "🟡"
+        if status == "LOST": return "🔴"
+        return "⚪"
+
+    df.insert(0, "HEAT", df["STATUS"].apply(get_heat))
+
+    # THE ONE AND ONLY DATA EDITOR
     edited_df = st.data_editor(
         df,
         use_container_width=True,
         num_rows="dynamic",
         column_config={
-            "STATUS": st.column_config.SelectboxColumn("STATUS", options=list(STATUS_STYLES.keys()), required=True),
+            "HEAT": st.column_config.TextColumn("HEAT", disabled=True, width="small"),
+            "STATUS": st.column_config.SelectboxColumn("STATUS", options=STATUS_OPTIONS, required=True),
             "QUOTE": st.column_config.NumberColumn("QUOTE ($)", format="$%d"),
             "Submitted": st.column_config.TextColumn("Submitted", disabled=True),
             "EVENT DATE": st.column_config.DateColumn("EVENT DATE")
         },
-        key="luxury_crm_editor"
+        key="unified_crm_editor_v7"
     )
 
-    if not edited_df.equals(df_original):
-        if st.button("💾 Sync Changes to Google", type="primary", use_container_width=True):
-            # Cleanup & Sync
-            edited_df['STATUS'] = edited_df['STATUS'].replace("", "NEW").fillna("NEW")
-            edited_df.loc[edited_df['Submitted'] == "", 'Submitted'] = datetime.now().strftime("%Y-%m-%d %H:%M")
-            conn.update(worksheet="2026", data=edited_df)
-            st.success("Synced successfully!")
-            st.rerun()
+    # --- PART C: THE SYNC LOGIC ---
+    edited_clean = edited_df.drop(columns=["HEAT"])
 
-# VIEW: FORM (Adding New Lead)
-elif st.session_state.view == "form":
-    if st.button("← Back to Board"):
-        st.session_state.view = "list"
-        st.rerun()
-        
-    with st.form("new_lead_luxury"):
-        st.subheader("Create New Entry")
-        f1, f2 = st.columns(2)
-        contact = f1.text_input("Contact Name")
-        email = f1.text_input("Email")
-        phone = f2.text_input("Phone")
-        status = f2.selectbox("Initial Status", list(STATUS_STYLES.keys()))
-        quote = st.number_input("Estimated Quote ($)", min_value=0.0)
-        loc = st.text_input("Location")
-        date = st.date_input("Event Date")
-        notes = st.text_area("Notes")
-        
-        if st.form_submit_button("Create Lead"):
-            new_row = pd.DataFrame([{
-                "Submitted": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "STATUS": status, "QUOTE": quote, "CONTACT": contact,
-                "EMAIL": email, "PHONE": phone, "EVENT DATE": str(date),
-                "LOCATION": loc, "NOTES": notes
-            }])
-            updated_df = pd.concat([df, new_row], ignore_index=True)
-            conn.update(worksheet="2026", data=updated_df)
-            st.session_state.view = "list"
+    if not edited_clean.equals(df_original):
+        if st.button("💾 Sync Changes to Google Sheets", type="primary", key='btn_crm_sync', use_container_width=True):
+            
+            # Clean up new rows: Default to NEW status
+            edited_clean['STATUS'] = edited_clean['STATUS'].replace("", "NEW").fillna("NEW")
+            
+            # Auto-timestamp new entries
+            edited_clean.loc[edited_clean['Submitted'] == "", 'Submitted'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            
+            # Convert dates back to strings for Google storage
+            edited_clean['EVENT DATE'] = edited_clean['EVENT DATE'].astype(str)
+            
+            conn.update(worksheet="2026", data=edited_clean)
+            st.success("🔥 Data synced to Google Sheets!")
             st.rerun()
