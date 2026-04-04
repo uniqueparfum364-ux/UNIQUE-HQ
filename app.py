@@ -9,14 +9,8 @@ st.set_page_config(layout="wide", page_title="Unique Parfum HQ", page_icon="👃
 # Create the Secure Connection
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# The 4 Essential Statuses with Visual Markers
-STATUS_MAP = {
-    "NEW": "⚪ NEW",
-    "PENDING": "🟡 PENDING",
-    "SOLD": "🟢 SOLD",
-    "LOST": "🔴 LOST"
-}
-STATUS_OPTIONS = list(STATUS_MAP.keys())
+# The 4 Essential Statuses
+STATUS_OPTIONS = ["NEW", "PENDING", "SOLD", "LOST"]
 COLUMNS = ["Submitted", "STATUS", "QUOTE", "CONTACT", "EMAIL", "PHONE", "EVENT DATE", "LOCATION", "NOTES"]
 
 if 'page' not in st.session_state:
@@ -31,6 +25,7 @@ if st.session_state.page == "home":
         st.info("### 👥 Sales CRM")
         if st.button('Enter Sales Hub', key='btn_nav_crm', use_container_width=True):
             st.session_state.page = "crm"
+            st.rerun() # FIX: Instant navigation
     with col2:
         st.info("### 🧾 Auto-Invoices")
         st.button('Coming Soon', key='btn_menu_inv', use_container_width=True, disabled=True)
@@ -43,47 +38,50 @@ elif st.session_state.page == "crm":
     st.title("👥 Sales & Lead Hub")
     if st.button("← Back to Menu", key='btn_crm_back'):
         st.session_state.page = "home"
+        st.rerun() # FIX: Added rerun for instant page switching
     
     st.markdown("---")
 
-    # LOAD LIVE DATA
+    # LOAD LIVE DATA (FIX: Optimized TTL to 1 minute to prevent rate limits)
     try:
-        df = conn.read(worksheet="2026", ttl="0s")
+        # ttl="1m" keeps it snappy but reduces API calls
+        df = conn.read(worksheet="2026", ttl="1m") 
         df = df.dropna(how="all")
-        for c in COLUMNS:
-            if c not in df.columns:
+        
+        # FIX: Warning for missing columns (Schema Drift Check)
+        missing_cols = [c for c in COLUMNS if c not in df.columns]
+        if missing_cols:
+            st.warning(f"⚠️ Sheet schema drift! Missing columns: {', '.join(missing_cols)}")
+            for c in missing_cols:
                 df[c] = ""
+        
         df = df[COLUMNS]
     except Exception as e:
         st.error(f"Connecting to Google Sheets... {e}")
         df = pd.DataFrame(columns=COLUMNS)
 
-    # --- PART A: PIPELINE DASHBOARD (LOST = $0) ---
+    # --- PART A: PIPELINE DASHBOARD ---
     if not df.empty:
         temp_df = df.copy()
         temp_df['QUOTE'] = pd.to_numeric(temp_df['QUOTE'], errors='coerce').fillna(0)
-        
-        # Pipeline logic: Only count NEW, PENDING, and SOLD
         active_pipeline = temp_df[temp_df['STATUS'] != 'LOST']
         pipeline_val = active_pipeline['QUOTE'].sum()
         
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Active Leads", len(active_pipeline))
-        m2.metric("Pipeline Value", f"${pipeline_val:,.2f}", help="LOST deals are excluded from this total")
-        
-        sold_val = temp_df[temp_df['STATUS'] == 'SOLD']['QUOTE'].sum()
-        m3.metric("Total SOLD", f"${sold_val:,.2f}")
-        
-        lost_count = len(temp_df[temp_df['STATUS'] == 'LOST'])
-        m4.metric("LOST Deals", lost_count)
+        m2.metric("Pipeline Value", f"${pipeline_val:,.2f}")
+        m3.metric("Total SOLD", f"${temp_df[temp_df['STATUS'] == 'SOLD']['QUOTE'].sum():,.2f}")
+        m4.metric("LOST Deals", len(temp_df[temp_df['STATUS'] == 'LOST']))
 
     st.markdown("---")
 
     # --- PART B: THE UNIFIED WORKSPACE ---
     st.write("### 🗄️ Active Sales Pipeline")
-    st.write("💡 *Click any cell to edit. Add new rows at the bottom. Hit 'Sync' to save to Google.*")
+    
+    # FIX: Store original for comparison BEFORE adding the HEAT column
+    df_original = df.copy()
 
-    # Add a visual "Heat" column based on Status for the display
+    # Visual "Heat" column logic
     def get_heat(status):
         if status == "SOLD": return "🟢"
         if status == "PENDING": return "🟡"
@@ -92,7 +90,6 @@ elif st.session_state.page == "crm":
 
     df.insert(0, "HEAT", df["STATUS"].apply(get_heat))
 
-    # THE ONE AND ONLY DATA EDITOR
     edited_df = st.data_editor(
         df,
         use_container_width=True,
@@ -104,16 +101,23 @@ elif st.session_state.page == "crm":
             "Submitted": st.column_config.TextColumn("Submitted", disabled=True),
             "EVENT DATE": st.column_config.DateColumn("EVENT DATE")
         },
-        key="unified_crm_editor"
+        key="unified_crm_editor_v5"
     )
 
-    # --- PART C: THE SYNC BUTTON ---
-    # We remove the HEAT column before saving back to Google
-    if not edited_df.equals(df):
+    # --- PART C: THE REFINED SYNC LOGIC ---
+    # FIX: Clean comparison by dropping HEAT from the edited version
+    edited_clean = edited_df.drop(columns=["HEAT"])
+
+    if not edited_clean.equals(df_original):
         if st.button("💾 Sync Changes to Google Sheets", type="primary", key='btn_crm_sync', use_container_width=True):
-            save_df = edited_df.drop(columns=["HEAT"])
-            # Ensure New Rows get a timestamp
-            save_df.loc[save_df['Submitted'] == "", 'Submitted'] = datetime.now().strftime("%Y-%m-%d %H:%M")
-            conn.update(worksheet="2026", data=save_df)
-            st.success("🔥 All changes synced successfully!")
+            
+            # FIX: Auto-fill empty STATUS for new rows
+            edited_clean['STATUS'] = edited_clean['STATUS'].replace("", "NEW").fillna("NEW")
+            
+            # Ensure new rows get timestamps
+            edited_clean.loc[edited_clean['Submitted'] == "", 'Submitted'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            
+            # Update the Sheet
+            conn.update(worksheet="2026", data=edited_clean)
+            st.success("🔥 Changes synced! Refreshing data...")
             st.rerun()
